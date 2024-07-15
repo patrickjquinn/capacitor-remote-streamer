@@ -5,6 +5,7 @@
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
   "types": "dist/esm/index.d.ts",
+  "type":"module",
   "unpkg": "dist/plugin.js",
   "files": [
     "android/src/main/",
@@ -40,29 +41,23 @@
     "prettier": "prettier \"**/*.{css,html,ts,js,java}\"",
     "swiftlint": "node-swiftlint",
     "docgen": "docgen --api RemoteStreamerPlugin --output-readme README.md --output-json dist/docs.json",
-    "build": "npm run clean && npm run docgen && tsc && rollup -c rollup.config.js",
+    "build": "npm run clean && npm run docgen && npx tsc && npx rollup -c rollup.config.js",
     "clean": "rimraf ./dist",
     "watch": "tsc --watch",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@capacitor/android": "^6.0.0",
-    "@capacitor/core": "^6.0.0",
     "@capacitor/docgen": "^0.2.2",
-    "@capacitor/ios": "^6.0.0",
     "@ionic/eslint-config": "^0.4.0",
-    "@ionic/prettier-config": "^1.0.1",
+    "@ionic/prettier-config": "^4.0.0",
     "@ionic/swiftlint-config": "^1.1.2",
-    "eslint": "^8.57.0",
-    "prettier": "~2.3.0",
-    "prettier-plugin-java": "~1.0.2",
-    "rimraf": "^3.0.2",
-    "rollup": "^2.32.0",
-    "swiftlint": "^1.0.1",
-    "typescript": "~4.1.5"
-  },
-  "peerDependencies": {
-    "@capacitor/core": "^6.0.0"
+    "eslint": "^9.7.0",
+    "prettier": "~3.3.3",
+    "prettier-plugin-java": "~2.6.4",
+    "rimraf": "^6.0.1",
+    "rollup": "^4.18.1",
+    "swiftlint": "^1.0.2",
+    "typescript": "^4.8.4"
   },
   "prettier": "@ionic/prettier-config",
   "swiftlint": "@ionic/swiftlint-config",
@@ -76,5 +71,10 @@
     "android": {
       "src": "android"
     }
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.0",
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/ios": "^6.1.0"
   }
 }
