@@ -3,7 +3,17 @@ import Capacitor
 import AVFoundation
 
 @objc(RemoteStreamerPlugin)
-public class RemoteStreamerPlugin: CAPPlugin {
+public class RemoteStreamerPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "RemoteStreamerPlugin"
+    public let jsName = "RemoteStreamer"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "play", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pause", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resume", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "seekTo", returnType: CAPPluginReturnPromise)
+    ]
+    
     private let implementation = RemoteStreamer()
     
     @objc func play(_ call: CAPPluginCall) {
