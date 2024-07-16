@@ -12,6 +12,7 @@ class RemoteStreamer: NSObject {
     
     override init() {
         super.init()
+        registerForNotifications()
     }
     
     func play(url: String, completion: @escaping (Result<Void, Error>) -> Void) {
@@ -57,6 +58,36 @@ class RemoteStreamer: NSObject {
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("Failed to set audio session category: \(error)")
+        }
+    }
+    
+    private func registerForNotifications() {
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(handleInterruption),
+                                               name: AVAudioSession.interruptionNotification,
+                                               object: AVAudioSession.sharedInstance())
+    }
+    
+    @objc private func handleInterruption(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+        
+        if type == .began {
+            // Interruption began, take appropriate actions (save state, update user interface)
+            print("Audio interruption began")
+        } else if type == .ended {
+            guard let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt else {
+                return
+            }
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            if options.contains(.shouldResume) {
+                // Interruption ended, resume playback if needed
+                player?.play()
+                print("Audio interruption ended, resuming playback")
+            }
         }
     }
     

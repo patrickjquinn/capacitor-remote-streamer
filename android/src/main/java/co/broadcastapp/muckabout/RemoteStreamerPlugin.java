@@ -1,6 +1,13 @@
 package co.broadcastapp.muckabout;
 
 import android.content.Context;
+import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
+import android.os.Bundle;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.MediaItem;
@@ -17,17 +24,30 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-
 @CapacitorPlugin(name = "RemoteStreamer")
-public class RemoteStreamerPlugin extends Plugin {
+public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudioFocusChangeListener {
     private ExoPlayer player;
     private DefaultDataSourceFactory dataSourceFactory;
+    private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
 
     @Override
     public void load() {
         super.load();
         Context context = getContext();
+        audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         dataSourceFactory = new DefaultDataSourceFactory(context, Util.getUserAgent(context, "RemoteStreamer"));
+
+        AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build();
+
+        focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(audioAttributes)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener(this)
+                .build();
     }
 
     @PluginMethod
@@ -54,6 +74,11 @@ public class RemoteStreamerPlugin extends Plugin {
         player.prepare();
         player.play();
 
+        int focusResult = audioManager.requestAudioFocus(focusRequest);
+        if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            player.play();
+        }
+
         setupPlayerListeners();
 
         notifyListeners("play", new JSObject());
@@ -74,6 +99,15 @@ public class RemoteStreamerPlugin extends Plugin {
                     case Player.STATE_ENDED:
                         notifyListeners("stop", new JSObject());
                         break;
+                }
+            }
+
+            @Override
+            public void onIsPlayingChanged(boolean isPlaying) {
+                if (isPlaying) {
+                    notifyListeners("play", new JSObject());
+                } else {
+                    notifyListeners("pause", new JSObject());
                 }
             }
 
@@ -101,8 +135,11 @@ public class RemoteStreamerPlugin extends Plugin {
     @PluginMethod
     public void resume(PluginCall call) {
         if (player != null) {
-            player.play();
-            notifyListeners("play", new JSObject());
+            int focusResult = audioManager.requestAudioFocus(focusRequest);
+            if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                player.play();
+                notifyListeners("play", new JSObject());
+            }
         }
         call.resolve();
     }
@@ -127,6 +164,7 @@ public class RemoteStreamerPlugin extends Plugin {
         if (player != null) {
             player.release();
             player = null;
+            audioManager.abandonAudioFocusRequest(focusRequest);
         }
     }
 
@@ -135,5 +173,26 @@ public class RemoteStreamerPlugin extends Plugin {
         releasePlayer();
         super.handleOnDestroy();
     }
-}
 
+    @Override
+    public void onAudioFocusChange(int focusChange) {
+        if (player == null) {
+            return;
+        }
+
+        switch (focusChange) {
+            case AudioManager.AUDIOFOCUS_GAIN:
+                player.play();
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS:
+                player.pause();
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                player.pause();
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                player.setVolume(0.1f);
+                break;
+        }
+    }
+}
