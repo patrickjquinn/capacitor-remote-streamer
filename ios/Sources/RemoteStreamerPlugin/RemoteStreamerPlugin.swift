@@ -1,6 +1,5 @@
 import Foundation
 import Capacitor
-import AVFoundation
 
 @objc(RemoteStreamerPlugin)
 public class RemoteStreamerPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -16,6 +15,36 @@ public class RemoteStreamerPlugin: CAPPlugin, CAPBridgedPlugin {
     
     private let implementation = RemoteStreamer()
     
+    override public func load() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handlePlayEvent), name: Notification.Name("RemoteStreamerPlay"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handlePauseEvent), name: Notification.Name("RemoteStreamerPause"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleStopEvent), name: Notification.Name("RemoteStreamerStop"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleTimeUpdateEvent), name: Notification.Name("RemoteStreamerTimeUpdate"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleBufferingEvent), name: Notification.Name("RemoteStreamerBuffering"), object: nil)
+    }
+
+    @objc func handlePlayEvent() {
+        notifyListeners("play", data: nil)
+    }
+
+    @objc func handlePauseEvent() {
+        notifyListeners("pause", data: nil)
+    }
+
+    @objc func handleStopEvent() {
+        notifyListeners("stop", data: nil)
+    }
+
+    @objc func handleBufferingEvent() {
+        notifyListeners("buffering", data: nil)
+    }
+
+    @objc func handleTimeUpdateEvent(notification: Notification) {
+        if let userInfo = notification.userInfo, let currentTime = userInfo["currentTime"] as? Double {
+            notifyListeners("timeUpdate", data: ["currentTime": currentTime])
+        }
+    }
+
     @objc func play(_ call: CAPPluginCall) {
         guard let url = call.getString("url") else {
             call.reject("Must provide a URL")
