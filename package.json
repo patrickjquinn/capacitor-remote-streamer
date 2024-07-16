@@ -1,6 +1,6 @@
 {
   "name": "mp3-hls-streaming",
-  "version": "0.0.1",
+  "version": "0.1.1",
   "description": "Stream audio HLS and MP3",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
