@@ -1,6 +1,6 @@
 {
   "name": "mp3-hls-streaming",
-  "version": "0.0.1",
+  "version": "0.1.5",
   "description": "Stream remote HLS and MP3 streams on iOS and Android.",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
