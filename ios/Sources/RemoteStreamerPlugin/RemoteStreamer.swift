@@ -12,7 +12,7 @@ class RemoteStreamer: NSObject {
     
     override init() {
         super.init()
-        registerForNotifications()
+        setupInterruptionObserver()
     }
     
     func play(url: String, completion: @escaping (Result<Void, Error>) -> Void) {
@@ -61,36 +61,6 @@ class RemoteStreamer: NSObject {
         }
     }
     
-    private func registerForNotifications() {
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(handleInterruption),
-                                               name: AVAudioSession.interruptionNotification,
-                                               object: AVAudioSession.sharedInstance())
-    }
-    
-    @objc private func handleInterruption(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
-            return
-        }
-        
-        if type == .began {
-            // Interruption began, take appropriate actions (save state, update user interface)
-            print("Audio interruption began")
-        } else if type == .ended {
-            guard let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt else {
-                return
-            }
-            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-            if options.contains(.shouldResume) {
-                // Interruption ended, resume playback if needed
-                player?.play()
-                print("Audio interruption ended, resuming playback")
-            }
-        }
-    }
-    
     private func setupObservers(playerItem: AVPlayerItem) {
         NotificationCenter.default.addObserver(self, selector: #selector(playerDidFinishPlaying), name: .AVPlayerItemDidPlayToEndTime, object: playerItem)
         
@@ -121,7 +91,6 @@ class RemoteStreamer: NSObject {
                 NotificationCenter.default.post(name: Notification.Name("RemoteStreamerPlay"), object: nil)
             case .waitingToPlayAtSpecifiedRate:
                 NotificationCenter.default.post(name: Notification.Name("RemoteStreamerBuffering"), object: nil)
-                // Handle buffering state if needed
                 break
             @unknown default:
                 break
@@ -169,7 +138,34 @@ class RemoteStreamer: NSObject {
         NotificationCenter.default.post(name: Notification.Name("RemoteStreamerStop"), object: nil)
     }
     
+    private func setupInterruptionObserver() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: AVAudioSession.interruptionNotification, object: nil)
+    }
+
+    @objc private func handleInterruption(notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        switch type {
+        case .began:
+            player?.pause()
+        case .ended:
+            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                if options.contains(.shouldResume) {
+                    player?.play()
+                }
+            }
+        @unknown default:
+            break
+        }
+    }
+    
     deinit {
         removeObservers()
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
     }
 }

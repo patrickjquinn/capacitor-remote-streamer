@@ -1,14 +1,13 @@
 package co.broadcastapp.muckabout;
 
 import android.content.Context;
-import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
-import android.os.Bundle;
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
+import android.os.Handler;
+import android.os.Looper;
 
+import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.PlaybackException;
@@ -30,11 +29,14 @@ public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudio
     private DefaultDataSourceFactory dataSourceFactory;
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
+    private Handler handler;
+    private Runnable updateTimeTask;
 
     @Override
     public void load() {
         super.load();
         Context context = getContext();
+        handler = new Handler(Looper.getMainLooper());
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         dataSourceFactory = new DefaultDataSourceFactory(context, Util.getUserAgent(context, "RemoteStreamer"));
 
@@ -58,31 +60,32 @@ public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudio
             return;
         }
 
-        releasePlayer();
-        player = new ExoPlayer.Builder(getContext()).build();
+        handler.post(() -> {
+            releasePlayer();
+            player = new ExoPlayer.Builder(getContext()).build();
 
-        MediaSource mediaSource;
-        if (url.endsWith(".m3u8")) {
-            mediaSource = new HlsMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(MediaItem.fromUri(url));
-        } else {
-            mediaSource = new ProgressiveMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(MediaItem.fromUri(url));
-        }
+            MediaSource mediaSource;
+            if (url.endsWith(".m3u8")) {
+                mediaSource = new HlsMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(url));
+            } else {
+                mediaSource = new ProgressiveMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(url));
+            }
 
-        player.setMediaSource(mediaSource);
-        player.prepare();
-        player.play();
+            player.setMediaSource(mediaSource);
+            player.prepare();
 
-        int focusResult = audioManager.requestAudioFocus(focusRequest);
-        if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            player.play();
-        }
+            setupPlayerListeners();
 
-        setupPlayerListeners();
+            int focusResult = audioManager.requestAudioFocus(focusRequest);
+            if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                player.play();
+            }
 
-        notifyListeners("play", new JSObject());
-        call.resolve();
+            notifyListeners("play", new JSObject());
+            call.resolve();
+        });
     }
 
     private void setupPlayerListeners() {
@@ -95,8 +98,10 @@ public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudio
                         break;
                     case Player.STATE_READY:
                         notifyListeners("buffering", new JSObject().put("isBuffering", false));
+                        startUpdatingTime();
                         break;
                     case Player.STATE_ENDED:
+                        stopUpdatingTime();
                         notifyListeners("stop", new JSObject());
                         break;
                 }
@@ -115,18 +120,13 @@ public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudio
             public void onPlayerError(PlaybackException error) {
                 notifyListeners("error", new JSObject().put("message", error.getMessage()));
             }
-
-            @Override
-            public void onPositionDiscontinuity(Player.PositionInfo oldPosition, Player.PositionInfo newPosition, int reason) {
-                notifyListeners("timeUpdate", new JSObject().put("currentTime", player.getCurrentPosition()));
-            }
         });
     }
 
     @PluginMethod
     public void pause(PluginCall call) {
         if (player != null) {
-            player.pause();
+            handler.post(() -> player.pause());
             notifyListeners("pause", new JSObject());
         }
         call.resolve();
@@ -137,7 +137,7 @@ public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudio
         if (player != null) {
             int focusResult = audioManager.requestAudioFocus(focusRequest);
             if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                player.play();
+                handler.post(() -> player.play());
                 notifyListeners("play", new JSObject());
             }
         }
@@ -146,9 +146,13 @@ public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudio
 
     @PluginMethod
     public void seekTo(PluginCall call) {
-        long position = call.getLong("position", 0L);
+        Long position = call.getLong("position");
+        if (position == null) {
+            call.reject("Position is required");
+            return;
+        }
         if (player != null) {
-            player.seekTo(position);
+            handler.post(() -> player.seekTo(position));
         }
         call.resolve();
     }
@@ -162,9 +166,40 @@ public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudio
 
     private void releasePlayer() {
         if (player != null) {
-            player.release();
-            player = null;
-            audioManager.abandonAudioFocusRequest(focusRequest);
+            handler.post(() -> {
+                stopUpdatingTime();
+                player.release();
+                player = null;
+                audioManager.abandonAudioFocusRequest(focusRequest);
+            });
+        }
+    }
+
+    private void startUpdatingTime() {
+        stopUpdatingTime();
+        updateTimeTask = new Runnable() {
+            @Override
+            public void run() {
+                if (player != null && player.isPlaying()) {
+                    long currentTime = player.getCurrentPosition();
+                    long duration = player.getDuration();
+                    JSObject timeData = new JSObject()
+                            .put("currentTime", currentTime / 1000.0)
+                            .put("duration", duration == C.TIME_UNSET ? 0 : duration / 1000.0);
+                    notifyListeners("timeUpdate", timeData);
+                    handler.postDelayed(this, 500);
+                } else {
+                    handler.postDelayed(this, 1000);
+                }
+            }
+        };
+        handler.post(updateTimeTask);
+    }
+
+    private void stopUpdatingTime() {
+        if (updateTimeTask != null) {
+            handler.removeCallbacks(updateTimeTask);
+            updateTimeTask = null;
         }
     }
 
@@ -180,19 +215,22 @@ public class RemoteStreamerPlugin extends Plugin implements AudioManager.OnAudio
             return;
         }
 
-        switch (focusChange) {
-            case AudioManager.AUDIOFOCUS_GAIN:
-                player.play();
-                break;
-            case AudioManager.AUDIOFOCUS_LOSS:
-                player.pause();
-                break;
-            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                player.pause();
-                break;
-            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
-                player.setVolume(0.1f);
-                break;
-        }
+        handler.post(() -> {
+            switch (focusChange) {
+                case AudioManager.AUDIOFOCUS_GAIN:
+                    player.setVolume(1.0f);
+                    player.play();
+                    break;
+                case AudioManager.AUDIOFOCUS_LOSS:
+                    player.pause();
+                    break;
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                    player.pause();
+                    break;
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                    player.setVolume(0.1f);
+                    break;
+            }
+        });
     }
 }
